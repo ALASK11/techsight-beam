@@ -67,41 +67,35 @@ def _resolve_filesystem(uri: str):
 # ── Partition listing (pipeline-construction time) ───────────────────────
 
 
-def list_cc_index_files(
-    crawl_id: str,
-    cc_index_base: str = CC_INDEX_S3_BASE,
-) -> list[str]:
-    """Return fully-qualified URIs of every Parquet partition for *crawl_id*.
+def list_cc_index_files(cc_index_base: str) -> list[str]:
+    """Return fully-qualified URIs of every Parquet partition in the generic directory.
 
     Runs on the machine that **constructs** the pipeline (i.e. the submitter),
     not on Dataflow workers.  The result is passed to ``beam.Create``.
     """
     base = cc_index_base.rstrip("/")
-    uri = f"{base}/crawl={crawl_id}/subset=warc/"
 
     # Determine the scheme so we can re-attach it to each returned path.
     scheme = ""
     if "://" in base:
         scheme = base.split("://")[0] + "://"
 
-    fs, prefix = _resolve_filesystem(uri)
+    fs, prefix = _resolve_filesystem(base)
     selector = pafs.FileSelector(prefix, recursive=True)
 
     try:
         infos = fs.get_file_info(selector)
     except Exception as exc:
         raise RuntimeError(
-            f"Failed to list CC Index files at {uri}: {exc}. "
-            "If you cannot reach S3 directly, mirror the CC Index to GCS and "
-            "pass --cc_index_base gs://YOUR_BUCKET/cc-index/table/cc-main/warc"
+            f"Failed to list CC Index files at {base}: {exc}. "
         ) from exc
 
     paths = sorted(
         f"{scheme}{info.path}"
         for info in infos
-        if info.type == pafs.FileType.File and info.path.endswith(".parquet")
+        if info.type == pafs.FileType.File and (info.path.endswith(".parquet") or "part-" in info.path.split("/")[-1])
     )
-    logger.info("Found %d CC Index partitions for %s", len(paths), crawl_id)
+    logger.info("Found %d CC Index partitions at %s", len(paths), base)
     return paths
 
 

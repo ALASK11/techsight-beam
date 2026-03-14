@@ -8,6 +8,7 @@ This is orders of magnitude cheaper than scanning all ~90 K WARC files.
 import logging
 
 import apache_beam as beam
+import pyarrow as pa
 from apache_beam.io import ReadFromText, WriteToBigQuery, BigQueryDisposition
 
 from techsight_beam.transforms.aggregate import FormatForBigQuery
@@ -54,7 +55,6 @@ def build_pipeline(pipeline: beam.Pipeline, options) -> beam.Pipeline:
 
     # ── Discover CC Index partitions (runs at submission time) ───────────
     parquet_files = list_cc_index_files(
-        crawl_id=options.crawl_id,
         cc_index_base=options.cc_index_base,
     )
     logger.info("Will process %d CC Index partitions", len(parquet_files))
@@ -93,37 +93,60 @@ def build_pipeline(pipeline: beam.Pipeline, options) -> beam.Pipeline:
         | "ReshuffleBeforeFetch" >> beam.Reshuffle()
     )
 
-    # ── Step 4: Fetch WARC records (byte-range) ─────────────────────────
-    html_records = matched | "FetchWarcRecords" >> beam.ParDo(
-        FetchWarcRecordFn(cc_base_url=options.cc_base_url)
-    )
+    # ── Step 4 Branch: Extraction-only vs Full Pipeline ─────────────────
+    if options.extraction_only:
+        _schema = pa.schema([
+            ("domain", pa.string()),
+            ("warc_filename", pa.string())
+        ])
 
-    # ── Step 5: Extract <script src="..."> tags ─────────────────────────
-    script_entries = html_records | "ExtractScripts" >> beam.ParDo(
-        ExtractScriptsFn()
-    )
-
-    # ── Step 6: Aggregate counters ──────────────────────────────────────
-    counts = (
-        script_entries
-        | "CompositeKey"
-        >> beam.Map(
-            lambda e: ((e["crawl_date"], e["page_url"], e["script_origin"]), 1)
+        extracted = (
+            matched 
+            | "MapToDomainAndFileName" >> beam.Map(
+                lambda x: {"domain": extract_registered_domain(x["url"]), "warc_filename": x["warc_filename"]}
+            )
         )
-        | "CountPerKey" >> beam.CombinePerKey(sum)
-    )
-
-    # ── Step 7: Write to BigQuery ───────────────────────────────────────
-    (
-        counts
-        | "FormatRows" >> beam.ParDo(FormatForBigQuery())
-        | "WriteToBigQuery"
-        >> WriteToBigQuery(
-            table=options.output_table,
-            schema=BQ_SCHEMA,
-            write_disposition=BigQueryDisposition.WRITE_APPEND,
-            create_disposition=BigQueryDisposition.CREATE_IF_NEEDED,
+        
+        (
+            extracted 
+            | "WriteExtractionParquet" >> beam.io.WriteToParquet(
+                file_path_prefix=options.extraction_output_prefix,
+                schema=_schema,
+                file_name_suffix=".parquet"
+            )
         )
-    )
+    else:
+        # ── Step 4: Fetch WARC records (byte-range) ─────────────────────────
+        html_records = matched | "FetchWarcRecords" >> beam.ParDo(
+            FetchWarcRecordFn(cc_base_url=options.cc_base_url)
+        )
+
+        # ── Step 5: Extract <script src="..."> tags ─────────────────────────
+        script_entries = html_records | "ExtractScripts" >> beam.ParDo(
+            ExtractScriptsFn()
+        )
+
+        # ── Step 6: Aggregate counters ──────────────────────────────────────
+        counts = (
+            script_entries
+            | "CompositeKey"
+            >> beam.Map(
+                lambda e: ((e["crawl_date"], e["page_url"], e["script_origin"]), 1)
+            )
+            | "CountPerKey" >> beam.CombinePerKey(sum)
+        )
+
+        # ── Step 7: Write to BigQuery ───────────────────────────────────────
+        (
+            counts
+            | "FormatRows" >> beam.ParDo(FormatForBigQuery())
+            | "WriteToBigQuery"
+            >> WriteToBigQuery(
+                table=options.output_table,
+                schema=BQ_SCHEMA,
+                write_disposition=BigQueryDisposition.WRITE_APPEND,
+                create_disposition=BigQueryDisposition.CREATE_IF_NEEDED,
+            )
+        )
 
     return pipeline

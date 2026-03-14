@@ -1,8 +1,7 @@
 """Custom pipeline options for the TechSight Common Crawl pipeline."""
 
 from apache_beam.options.pipeline_options import PipelineOptions
-
-from techsight_beam.transforms.cc_index import CC_INDEX_S3_BASE
+import apache_beam as beam
 
 
 class TechSightOptions(PipelineOptions):
@@ -33,11 +32,10 @@ class TechSightOptions(PipelineOptions):
         )
         parser.add_argument(
             "--cc_index_base",
-            default=CC_INDEX_S3_BASE,
+            default="gs://techsight-cc-columnar-index",
             help=(
-                "Base path to CC Index Parquet files. "
-                "Default reads from S3 (anonymous access). "
-                "Set to gs://... if you mirror the CC Index to GCS."
+                "Base path to CC Index Parquet files (e.g., gs://my-bucket). "
+                "Must point to flat files like part-* or *.parquet"
             ),
         )
         parser.add_argument(
@@ -47,4 +45,15 @@ class TechSightOptions(PipelineOptions):
                 "Base URL for fetching WARC record byte ranges. "
                 "Change this if you mirror WARC files to GCS."
             ),
+        )
+        parser.add_argument(
+            "--extraction_only",
+            action="store_true",
+            default=True,
+            help="If true, bypass WARC downloads and only output a Parquet file of matched target URLs and their WARC files.",
+        )
+        parser.add_argument(
+            "--extraction_output_prefix",
+            default="gs://techsight-cc-columnar-index/extracted_",
+            help="Prefix for the output Parquet file when running in extraction_only mode.",
         )
