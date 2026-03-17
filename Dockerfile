@@ -1,4 +1,4 @@
-FROM apache/beam_python3.11_sdk:2.61.0
+FROM apache/beam_python3.12_sdk:2.71.0
 
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt

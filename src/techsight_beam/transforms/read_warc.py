@@ -76,9 +76,15 @@ class FilterByTargetURLFn(beam.DoFn):
 
     def process(self, entry):
         self.CHECKED.inc()
-        if normalize_url(entry["url"]) in self._url_set:
-            self.PASSED.inc()
-            yield entry
+        norm_entry_url = normalize_url(entry["url"])
+        
+        # Check if the entry URL starts with any of our target URL prefixes.
+        # This allows "https://google.com/" to match "https://google.com/search?q=..."
+        for target_prefix in self._url_set:
+            if norm_entry_url.startswith(target_prefix):
+                self.PASSED.inc()
+                yield entry
+                return
 
 
 # ── Byte-range WARC record fetcher ───────────────────────────────────────

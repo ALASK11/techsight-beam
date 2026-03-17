@@ -31,6 +31,8 @@ def normalize_url(url: str) -> str:
 
     scheme = (parsed.scheme or "http").lower()
     hostname = (parsed.hostname or "").lower()
+    if hostname.startswith("www."):
+        hostname = hostname[4:]
 
     port = parsed.port
     if port in (80, 443, None):
