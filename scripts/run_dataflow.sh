@@ -42,7 +42,7 @@ python -m techsight_beam.main \
     --output_table "$OUTPUT_TABLE" \
     --cc_index_base "$CC_INDEX_BASE" \
     --extraction_only \
-    --machine_type n1-standard-4 \
+    --machine_type n1-highmem-4 \
     --disk_size_gb 50 \
     --max_num_workers "$WORKERS" \
     --sdk_container_image "$IMAGE" \
