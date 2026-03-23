@@ -1,0 +1,5 @@
+.\scripts\build_image.ps1 -Project techsight-backend -Region us-central1
+
+
+
+.\scripts\run_dataflow.ps1 -Project techsight-backend -Region us-central1 -Bucket techsight-cc-bucket -Crawl CC-MAIN-2025-08
